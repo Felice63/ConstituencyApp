@@ -27,6 +27,7 @@ import {
   Save as SaveIcon,
   Cancel as CancelIcon,
   Add as AddIcon,
+  Map as MapIcon,
 } from '@mui/icons-material';
 import { constituentApi } from '../services/api';
 
@@ -245,6 +246,12 @@ const ConstituentTable = () => {
     }
   };
 
+  const handleMapClick = (address) => {
+    const encodedAddress = encodeURIComponent(address);
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+    window.open(mapsUrl, '_blank', 'noopener,noreferrer');
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -420,6 +427,13 @@ const ConstituentTable = () => {
                     <TableCell>{constituent.wardNumber}</TableCell>
                     <TableCell>{constituent.householdSize}</TableCell>
                     <TableCell align="right">
+                      <IconButton
+                        color="success"
+                        onClick={() => handleMapClick(constituent.address)}
+                        title="View on Google Maps"
+                      >
+                        <MapIcon />
+                      </IconButton>
                       <IconButton
                         color="primary"
                         onClick={() => handleEdit(constituent)}
