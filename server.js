@@ -10,8 +10,77 @@ app.use(express.json());
 
 app.get('/api/constituents', (req, res) => {
   try {
-    const constituents = db.prepare('SELECT * FROM constituents ORDER BY createdAt DESC').all();
-    res.json(constituents);
+    const { limit = 10, offset = 0, search = '', filter = '' } = req.query;
+    
+    const parsedLimit = parseInt(limit);
+    const parsedOffset = parseInt(offset);
+    
+    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+      return res.status(400).json({ error: 'Limit must be between 1 and 100' });
+    }
+    
+    if (isNaN(parsedOffset) || parsedOffset < 0) {
+      return res.status(400).json({ error: 'Offset must be non-negative' });
+    }
+    
+    let whereConditions = [];
+    let params = [];
+    
+    if (search) {
+      whereConditions.push('(firstName LIKE ? OR lastName LIKE ? OR address LIKE ?)');
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+    
+    if (filter) {
+      try {
+        const filterObj = JSON.parse(filter);
+        
+        if (filterObj.wardNumber !== undefined && filterObj.wardNumber !== null && filterObj.wardNumber !== '') {
+          whereConditions.push('wardNumber = ?');
+          params.push(parseInt(filterObj.wardNumber));
+        }
+        
+        if (filterObj.householdSizeMin !== undefined && filterObj.householdSizeMin !== null && filterObj.householdSizeMin !== '') {
+          whereConditions.push('householdSize >= ?');
+          params.push(parseInt(filterObj.householdSizeMin));
+        }
+        
+        if (filterObj.householdSizeMax !== undefined && filterObj.householdSizeMax !== null && filterObj.householdSizeMax !== '') {
+          whereConditions.push('householdSize <= ?');
+          params.push(parseInt(filterObj.householdSizeMax));
+        }
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid filter format' });
+      }
+    }
+    
+    const whereClause = whereConditions.length > 0 
+      ? 'WHERE ' + whereConditions.join(' AND ') 
+      : '';
+    
+    const countQuery = `SELECT COUNT(*) as total FROM constituents ${whereClause}`;
+    const totalResult = db.prepare(countQuery).get(...params);
+    const total = totalResult.total;
+    
+    const dataQuery = `
+      SELECT * FROM constituents 
+      ${whereClause}
+      ORDER BY createdAt DESC 
+      LIMIT ? OFFSET ?
+    `;
+    const constituents = db.prepare(dataQuery).all(...params, parsedLimit, parsedOffset);
+    
+    res.json({
+      data: constituents,
+      pagination: {
+        total,
+        limit: parsedLimit,
+        offset: parsedOffset,
+        page: Math.floor(parsedOffset / parsedLimit) + 1,
+        totalPages: Math.ceil(total / parsedLimit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

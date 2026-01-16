@@ -26,6 +26,7 @@ import {
   InputLabel,
   Grid,
   Chip,
+  Pagination,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -55,23 +56,31 @@ const ConstituentTable = () => {
   const [householdSizeMin, setHouseholdSizeMin] = useState('');
   const [householdSizeMax, setHouseholdSizeMax] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [uniqueWards, setUniqueWards] = useState([]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const search = params.get('search') || '';
     const ward = params.get('ward') || '';
     const minSize = params.get('minSize') || '';
     const maxSize = params.get('maxSize') || '';
+    const pageParam = params.get('page') || '1';
 
     setSearchTerm(search);
     setDebouncedSearchTerm(search);
     setWardFilter(ward);
     setHouseholdSizeMin(minSize);
     setHouseholdSizeMax(maxSize);
+    setPage(parseInt(pageParam));
   }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
+      setPage(1);
     }, 300);
 
     return () => clearTimeout(timer);
@@ -84,11 +93,12 @@ const ConstituentTable = () => {
     if (wardFilter) params.set('ward', wardFilter);
     if (householdSizeMin) params.set('minSize', householdSizeMin);
     if (householdSizeMax) params.set('maxSize', householdSizeMax);
+    if (page > 1) params.set('page', page.toString());
 
     const queryString = params.toString();
     const newUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
     window.history.replaceState({}, '', newUrl);
-  }, [debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax]);
+  }, [debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax, page]);
 
   const showSnackbar = useCallback((message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
@@ -97,41 +107,36 @@ const ConstituentTable = () => {
   const fetchConstituents = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await constituentApi.getAll();
-      setConstituents(data);
+      
+      const filter = {};
+      if (wardFilter) filter.wardNumber = wardFilter;
+      if (householdSizeMin) filter.householdSizeMin = householdSizeMin;
+      if (householdSizeMax) filter.householdSizeMax = householdSizeMax;
+
+      const params = {
+        limit: rowsPerPage,
+        offset: (page - 1) * rowsPerPage,
+        search: debouncedSearchTerm,
+        filter: Object.keys(filter).length > 0 ? filter : null,
+      };
+
+      const response = await constituentApi.getAll(params);
+      setConstituents(response.data);
+      setTotalCount(response.pagination.total);
+
+      const allWardsResponse = await constituentApi.getAll({ limit: 1000, offset: 0 });
+      const wards = [...new Set(allWardsResponse.data.map(c => c.wardNumber))];
+      setUniqueWards(wards.sort((a, b) => a - b));
     } catch (error) {
       showSnackbar('Failed to load constituents: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [showSnackbar]);
+  }, [showSnackbar, page, rowsPerPage, debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax]);
 
   useEffect(() => {
     fetchConstituents();
   }, [fetchConstituents]);
-
-  const filteredConstituents = useMemo(() => {
-    return constituents.filter(constituent => {
-      const searchLower = debouncedSearchTerm.toLowerCase();
-      const matchesSearch = !debouncedSearchTerm || 
-        constituent.firstName.toLowerCase().includes(searchLower) ||
-        constituent.lastName.toLowerCase().includes(searchLower) ||
-        constituent.address.toLowerCase().includes(searchLower);
-
-      const matchesWard = !wardFilter || constituent.wardNumber === parseInt(wardFilter);
-
-      const minSize = householdSizeMin ? parseInt(householdSizeMin) : 0;
-      const maxSize = householdSizeMax ? parseInt(householdSizeMax) : Infinity;
-      const matchesHouseholdSize = constituent.householdSize >= minSize && constituent.householdSize <= maxSize;
-
-      return matchesSearch && matchesWard && matchesHouseholdSize;
-    });
-  }, [constituents, debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax]);
-
-  const uniqueWards = useMemo(() => {
-    const wards = [...new Set(constituents.map(c => c.wardNumber))];
-    return wards.sort((a, b) => a - b);
-  }, [constituents]);
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
@@ -143,6 +148,7 @@ const ConstituentTable = () => {
     setWardFilter('');
     setHouseholdSizeMin('');
     setHouseholdSizeMax('');
+    setPage(1);
   };
 
   const activeFiltersCount = useMemo(() => {
@@ -152,6 +158,16 @@ const ConstituentTable = () => {
     if (householdSizeMin || householdSizeMax) count++;
     return count;
   }, [debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax]);
+
+  const handlePageChange = (event, value) => {
+    setPage(value);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleRowsPerPageChange = (event) => {
+    setRowsPerPage(parseInt(event.target.value));
+    setPage(1);
+  };
 
   const validateField = (name, value) => {
     const newErrors = { ...errors };
@@ -276,6 +292,11 @@ const ConstituentTable = () => {
   const handleDeleteConfirm = async () => {
     try {
       await constituentApi.delete(deleteDialog.id);
+      
+      if (constituents.length === 1 && page > 1) {
+        setPage(page - 1);
+      }
+      
       await fetchConstituents();
       showSnackbar('Constituent deleted successfully');
     } catch (error) {
@@ -325,6 +346,7 @@ const ConstituentTable = () => {
 
     try {
       await constituentApi.create(newRow);
+      setPage(1);
       await fetchConstituents();
       setNewRow(null);
       setErrors({});
@@ -339,6 +361,8 @@ const ConstituentTable = () => {
     const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
     window.open(mapsUrl, '_blank', 'noopener,noreferrer');
   };
+
+  const totalPages = Math.ceil(totalCount / rowsPerPage);
 
   if (loading) {
     return (
@@ -385,7 +409,10 @@ const ConstituentTable = () => {
               <InputLabel>Ward Number</InputLabel>
               <Select
                 value={wardFilter}
-                onChange={(e) => setWardFilter(e.target.value)}
+                onChange={(e) => {
+                  setWardFilter(e.target.value);
+                  setPage(1);
+                }}
                 label="Ward Number"
               >
                 <MenuItem value="">All Wards</MenuItem>
@@ -402,7 +429,10 @@ const ConstituentTable = () => {
               label="Min Household Size"
               type="number"
               value={householdSizeMin}
-              onChange={(e) => setHouseholdSizeMin(e.target.value)}
+              onChange={(e) => {
+                setHouseholdSizeMin(e.target.value);
+                setPage(1);
+              }}
               size="small"
               inputProps={{ min: 1 }}
             />
@@ -414,7 +444,10 @@ const ConstituentTable = () => {
               label="Max Household Size"
               type="number"
               value={householdSizeMax}
-              onChange={(e) => setHouseholdSizeMax(e.target.value)}
+              onChange={(e) => {
+                setHouseholdSizeMax(e.target.value);
+                setPage(1);
+              }}
               size="small"
               inputProps={{ min: 1 }}
             />
@@ -468,10 +501,24 @@ const ConstituentTable = () => {
           </Box>
         )}
 
-        <Box sx={{ mt: 2 }}>
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="body2" color="text.secondary">
-            Showing {filteredConstituents.length} of {constituents.length} constituents
+            Showing {constituents.length > 0 ? (page - 1) * rowsPerPage + 1 : 0} - {Math.min(page * rowsPerPage, totalCount)} of {totalCount} constituents
           </Typography>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Rows per page</InputLabel>
+            <Select
+              value={rowsPerPage}
+              onChange={handleRowsPerPageChange}
+              label="Rows per page"
+            >
+              <MenuItem value={5}>5</MenuItem>
+              <MenuItem value={10}>10</MenuItem>
+              <MenuItem value={25}>25</MenuItem>
+              <MenuItem value={50}>50</MenuItem>
+              <MenuItem value={100}>100</MenuItem>
+            </Select>
+          </FormControl>
         </Box>
       </Paper>
 
@@ -553,7 +600,7 @@ const ConstituentTable = () => {
               </TableRow>
             )}
 
-            {filteredConstituents.map((constituent) => (
+            {constituents.map((constituent) => (
               <TableRow key={constituent.id}>
                 {editingId === constituent.id ? (
                   <>
@@ -653,11 +700,11 @@ const ConstituentTable = () => {
               </TableRow>
             ))}
 
-            {filteredConstituents.length === 0 && !newRow && (
+            {constituents.length === 0 && !newRow && (
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   <Typography color="textSecondary">
-                    {constituents.length === 0 
+                    {totalCount === 0 
                       ? 'No constituents found. Click "Add New" to create one.'
                       : 'No constituents match the current filters.'}
                   </Typography>
@@ -667,6 +714,20 @@ const ConstituentTable = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={handlePageChange}
+            color="primary"
+            showFirstButton
+            showLastButton
+            size="large"
+          />
+        </Box>
+      )}
 
       <Snackbar
         open={snackbar.open}

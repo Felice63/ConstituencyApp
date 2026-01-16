@@ -1,8 +1,23 @@
 const API_BASE_URL = '/api';
 
 export const constituentApi = {
-  async getAll() {
-    const response = await fetch(`${API_BASE_URL}/constituents`);
+  async getAll(params = {}) {
+    const { limit = 10, offset = 0, search = '', filter = null } = params;
+    
+    const queryParams = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    
+    if (search) {
+      queryParams.set('search', search);
+    }
+    
+    if (filter) {
+      queryParams.set('filter', JSON.stringify(filter));
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/constituents?${queryParams.toString()}`);
     if (!response.ok) {
       throw new Error('Failed to fetch constituents');
     }
