@@ -64,4 +64,27 @@ export const constituentApi = {
     }
     return true;
   },
+
+  async exportCSV() {
+    const response = await fetch(`${API_BASE_URL}/constituents/export/csv`);
+    if (!response.ok) {
+      throw new Error('Failed to export CSV');
+    }
+    return response.blob();
+  },
+
+  async importCSV(csvData) {
+    const response = await fetch(`${API_BASE_URL}/constituents/import/csv`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ csvData }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to import CSV');
+    }
+    return response.json();
+  },
 };

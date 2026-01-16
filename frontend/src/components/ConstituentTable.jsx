@@ -37,6 +37,8 @@ import {
   Map as MapIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
+  FileDownload as FileDownloadIcon,
+  FileUpload as FileUploadIcon,
 } from '@mui/icons-material';
 import { constituentApi } from '../services/api';
 
@@ -55,6 +57,8 @@ const ConstituentTable = () => {
   const [wardFilter, setWardFilter] = useState('');
   const [householdSizeMin, setHouseholdSizeMin] = useState('');
   const [householdSizeMax, setHouseholdSizeMax] = useState('');
+  const [importDialog, setImportDialog] = useState({ open: false });
+  const [csvFile, setCsvFile] = useState(null);
 
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -362,6 +366,73 @@ const ConstituentTable = () => {
     window.open(mapsUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const handleExportCSV = async () => {
+    try {
+      const blob = await constituentApi.exportCSV();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'constituents.csv';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      showSnackbar('CSV exported successfully');
+    } catch (error) {
+      showSnackbar('Failed to export CSV: ' + error.message, 'error');
+    }
+  };
+
+  const handleImportClick = () => {
+    setImportDialog({ open: true });
+    setCsvFile(null);
+  };
+
+  const handleImportCancel = () => {
+    setImportDialog({ open: false });
+    setCsvFile(null);
+  };
+
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      if (!file.name.endsWith('.csv')) {
+        showSnackbar('Please select a CSV file', 'error');
+        return;
+      }
+      setCsvFile(file);
+    }
+  };
+
+  const handleImportConfirm = async () => {
+    if (!csvFile) {
+      showSnackbar('Please select a file', 'error');
+      return;
+    }
+
+    try {
+      const text = await csvFile.text();
+      const result = await constituentApi.importCSV(text);
+      
+      await fetchConstituents();
+      setImportDialog({ open: false });
+      setCsvFile(null);
+      
+      if (result.failed > 0) {
+        const errorSummary = result.errors.slice(0, 3).map(e => `Row ${e.row}: ${e.error}`).join('; ');
+        const additionalErrors = result.errors.length > 3 ? ` and ${result.errors.length - 3} more errors` : '';
+        showSnackbar(
+          `Import completed: ${result.successful} succeeded, ${result.failed} failed. ${errorSummary}${additionalErrors}`,
+          'warning'
+        );
+      } else {
+        showSnackbar(`Successfully imported ${result.successful} constituents`);
+      }
+    } catch (error) {
+      showSnackbar('Failed to import CSV: ' + error.message, 'error');
+    }
+  };
+
   const totalPages = Math.ceil(totalCount / rowsPerPage);
 
   if (loading) {
@@ -378,14 +449,30 @@ const ConstituentTable = () => {
         <Typography variant="h4" component="h1">
           Constituents Management
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleAddNew}
-          disabled={newRow !== null || editingId !== null}
-        >
-          Add New
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExportCSV}
+          >
+            Export CSV
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<FileUploadIcon />}
+            onClick={handleImportClick}
+          >
+            Import CSV
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleAddNew}
+            disabled={newRow !== null || editingId !== null}
+          >
+            Add New
+          </Button>
+        </Box>
       </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
@@ -751,6 +838,36 @@ const ConstituentTable = () => {
           <Button onClick={handleDeleteCancel}>Cancel</Button>
           <Button onClick={handleDeleteConfirm} color="error" variant="contained">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={importDialog.open} onClose={handleImportCancel} maxWidth="sm" fullWidth>
+        <DialogTitle>Import Constituents from CSV</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Select a CSV file to import constituents. The file must contain the following headers:
+            firstName, lastName, address, wardNumber, householdSize.
+          </DialogContentText>
+          <Button
+            variant="outlined"
+            component="label"
+            fullWidth
+            startIcon={<FileUploadIcon />}
+          >
+            {csvFile ? csvFile.name : 'Choose File'}
+            <input
+              type="file"
+              accept=".csv"
+              hidden
+              onChange={handleFileSelect}
+            />
+          </Button>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleImportCancel}>Cancel</Button>
+          <Button onClick={handleImportConfirm} variant="contained" disabled={!csvFile}>
+            Import
           </Button>
         </DialogActions>
       </Dialog>

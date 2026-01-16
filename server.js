@@ -155,6 +155,184 @@ app.delete('/api/constituents/:id', (req, res) => {
   }
 });
 
+const escapeCSVField = (field) => {
+  if (field == null) {
+    return '';
+  }
+  const str = String(field);
+  if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
+app.get('/api/constituents/export/csv', (req, res) => {
+  try {
+    const constituents = db.prepare('SELECT * FROM constituents ORDER BY createdAt DESC').all();
+    
+    const headers = ['id', 'firstName', 'lastName', 'address', 'wardNumber', 'householdSize', 'createdAt'];
+    const csvHeaders = headers.join(',');
+    
+    const csvRows = constituents.map(constituent => 
+      headers.map(header => escapeCSVField(constituent[header])).join(',')
+    );
+    
+    const csv = [csvHeaders, ...csvRows].join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="constituents.csv"');
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const parseCSVLine = (line) => {
+  const fields = [];
+  let currentField = '';
+  let insideQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+    
+    if (char === '"' && insideQuotes && nextChar === '"') {
+      currentField += '"';
+      i++;
+    } else if (char === '"') {
+      insideQuotes = !insideQuotes;
+    } else if (char === ',' && !insideQuotes) {
+      fields.push(currentField);
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+  
+  fields.push(currentField);
+  return fields;
+};
+
+app.post('/api/constituents/import/csv', (req, res) => {
+  try {
+    const { csvData } = req.body;
+    
+    if (!csvData || typeof csvData !== 'string') {
+      return res.status(400).json({ error: 'CSV data is required' });
+    }
+    
+    const lines = csvData.split(/\r?\n/).filter(line => line.trim());
+    
+    if (lines.length < 2) {
+      return res.status(400).json({ error: 'CSV file must contain headers and at least one data row' });
+    }
+    
+    const headerLine = lines[0];
+    const headers = parseCSVLine(headerLine);
+    
+    const requiredHeaders = ['firstName', 'lastName', 'address', 'wardNumber', 'householdSize'];
+    const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+    
+    if (missingHeaders.length > 0) {
+      return res.status(400).json({ 
+        error: `Missing required headers: ${missingHeaders.join(', ')}` 
+      });
+    }
+    
+    const headerIndices = {};
+    headers.forEach((header, index) => {
+      headerIndices[header] = index;
+    });
+    
+    const results = {
+      successful: 0,
+      failed: 0,
+      errors: []
+    };
+    
+    const stmt = db.prepare(`
+      INSERT INTO constituents (firstName, lastName, address, wardNumber, householdSize, createdAt)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `);
+    
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+      
+      try {
+        const fields = parseCSVLine(line);
+        
+        const firstName = fields[headerIndices.firstName]?.trim() || '';
+        const lastName = fields[headerIndices.lastName]?.trim() || '';
+        const address = fields[headerIndices.address]?.trim() || '';
+        const wardNumber = fields[headerIndices.wardNumber]?.trim() || '';
+        const householdSize = fields[headerIndices.householdSize]?.trim() || '';
+        
+        if (!firstName || !lastName || !address || !wardNumber || !householdSize) {
+          results.failed++;
+          results.errors.push({
+            row: i + 1,
+            error: 'Missing required fields'
+          });
+          continue;
+        }
+        
+        const wardNum = parseInt(wardNumber);
+        const householdNum = parseInt(householdSize);
+        
+        if (isNaN(wardNum) || wardNum < 1 || wardNum > 50) {
+          results.failed++;
+          results.errors.push({
+            row: i + 1,
+            error: 'Ward number must be between 1 and 50'
+          });
+          continue;
+        }
+        
+        if (isNaN(householdNum) || householdNum < 1 || householdNum > 50) {
+          results.failed++;
+          results.errors.push({
+            row: i + 1,
+            error: 'Household size must be between 1 and 50'
+          });
+          continue;
+        }
+        
+        if (firstName.length < 2 || lastName.length < 2) {
+          results.failed++;
+          results.errors.push({
+            row: i + 1,
+            error: 'First and last names must be at least 2 characters'
+          });
+          continue;
+        }
+        
+        if (address.length < 5) {
+          results.failed++;
+          results.errors.push({
+            row: i + 1,
+            error: 'Address must be at least 5 characters'
+          });
+          continue;
+        }
+        
+        stmt.run(firstName, lastName, address, wardNum, householdNum);
+        results.successful++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          row: i + 1,
+          error: error.message
+        });
+      }
+    }
+    
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
