@@ -21,6 +21,8 @@ npm install
 
 ### Backend Server
 
+Navigate back to the root directory. If you're in the `frontend` folder the do `cd ..` in the terminal to move up to the root.
+
 ```bash
 npm start
 ```
