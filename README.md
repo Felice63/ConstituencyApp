@@ -27,7 +27,11 @@ npm start
 
 The server will start on port 3000 (or the PORT environment variable if set).
 
+
 ### Frontend Development Server
+
+Create a new terminal while the backend is running. 
+Click the plus sign in the terminal. The navigate to the `frontend` directory and run dev
 
 ```bash
 cd frontend
