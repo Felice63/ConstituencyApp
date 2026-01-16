@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Table,
@@ -20,6 +20,12 @@ import {
   DialogTitle,
   Typography,
   CircularProgress,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  Grid,
+  Chip,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -28,6 +34,8 @@ import {
   Cancel as CancelIcon,
   Add as AddIcon,
   Map as MapIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
 } from '@mui/icons-material';
 import { constituentApi } from '../services/api';
 
@@ -40,6 +48,47 @@ const ConstituentTable = () => {
   const [errors, setErrors] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, id: null });
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [wardFilter, setWardFilter] = useState('');
+  const [householdSizeMin, setHouseholdSizeMin] = useState('');
+  const [householdSizeMax, setHouseholdSizeMax] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const search = params.get('search') || '';
+    const ward = params.get('ward') || '';
+    const minSize = params.get('minSize') || '';
+    const maxSize = params.get('maxSize') || '';
+
+    setSearchTerm(search);
+    setDebouncedSearchTerm(search);
+    setWardFilter(ward);
+    setHouseholdSizeMin(minSize);
+    setHouseholdSizeMax(maxSize);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    
+    if (debouncedSearchTerm) params.set('search', debouncedSearchTerm);
+    if (wardFilter) params.set('ward', wardFilter);
+    if (householdSizeMin) params.set('minSize', householdSizeMin);
+    if (householdSizeMax) params.set('maxSize', householdSizeMax);
+
+    const queryString = params.toString();
+    const newUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
+    window.history.replaceState({}, '', newUrl);
+  }, [debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax]);
 
   const showSnackbar = useCallback((message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
@@ -61,9 +110,48 @@ const ConstituentTable = () => {
     fetchConstituents();
   }, [fetchConstituents]);
 
+  const filteredConstituents = useMemo(() => {
+    return constituents.filter(constituent => {
+      const searchLower = debouncedSearchTerm.toLowerCase();
+      const matchesSearch = !debouncedSearchTerm || 
+        constituent.firstName.toLowerCase().includes(searchLower) ||
+        constituent.lastName.toLowerCase().includes(searchLower) ||
+        constituent.address.toLowerCase().includes(searchLower);
+
+      const matchesWard = !wardFilter || constituent.wardNumber === parseInt(wardFilter);
+
+      const minSize = householdSizeMin ? parseInt(householdSizeMin) : 0;
+      const maxSize = householdSizeMax ? parseInt(householdSizeMax) : Infinity;
+      const matchesHouseholdSize = constituent.householdSize >= minSize && constituent.householdSize <= maxSize;
+
+      return matchesSearch && matchesWard && matchesHouseholdSize;
+    });
+  }, [constituents, debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax]);
+
+  const uniqueWards = useMemo(() => {
+    const wards = [...new Set(constituents.map(c => c.wardNumber))];
+    return wards.sort((a, b) => a - b);
+  }, [constituents]);
+
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setDebouncedSearchTerm('');
+    setWardFilter('');
+    setHouseholdSizeMin('');
+    setHouseholdSizeMax('');
+  };
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (debouncedSearchTerm) count++;
+    if (wardFilter) count++;
+    if (householdSizeMin || householdSizeMax) count++;
+    return count;
+  }, [debouncedSearchTerm, wardFilter, householdSizeMin, householdSizeMax]);
 
   const validateField = (name, value) => {
     const newErrors = { ...errors };
@@ -276,6 +364,117 @@ const ConstituentTable = () => {
         </Button>
       </Box>
 
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2} alignItems="flex-end">
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              fullWidth
+              label="Search"
+              placeholder="Search name or address..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: <SearchIcon sx={{ color: 'action.active', mr: 1 }} />,
+              }}
+              size="small"
+            />
+          </Grid>
+          
+          <Grid item xs={12} sm={6} md={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Ward Number</InputLabel>
+              <Select
+                value={wardFilter}
+                onChange={(e) => setWardFilter(e.target.value)}
+                label="Ward Number"
+              >
+                <MenuItem value="">All Wards</MenuItem>
+                {uniqueWards.map(ward => (
+                  <MenuItem key={ward} value={ward}>Ward {ward}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          <Grid item xs={6} sm={3} md={2}>
+            <TextField
+              fullWidth
+              label="Min Household Size"
+              type="number"
+              value={householdSizeMin}
+              onChange={(e) => setHouseholdSizeMin(e.target.value)}
+              size="small"
+              inputProps={{ min: 1 }}
+            />
+          </Grid>
+
+          <Grid item xs={6} sm={3} md={2}>
+            <TextField
+              fullWidth
+              label="Max Household Size"
+              type="number"
+              value={householdSizeMax}
+              onChange={(e) => setHouseholdSizeMax(e.target.value)}
+              size="small"
+              inputProps={{ min: 1 }}
+            />
+          </Grid>
+
+          <Grid item xs={12} sm={12} md={2}>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<ClearIcon />}
+              onClick={handleClearFilters}
+              disabled={activeFiltersCount === 0}
+            >
+              Clear Filters
+            </Button>
+          </Grid>
+        </Grid>
+
+        {activeFiltersCount > 0 && (
+          <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Active Filters:
+            </Typography>
+            {debouncedSearchTerm && (
+              <Chip
+                label={`Search: "${debouncedSearchTerm}"`}
+                onDelete={() => {
+                  setSearchTerm('');
+                  setDebouncedSearchTerm('');
+                }}
+                size="small"
+              />
+            )}
+            {wardFilter && (
+              <Chip
+                label={`Ward: ${wardFilter}`}
+                onDelete={() => setWardFilter('')}
+                size="small"
+              />
+            )}
+            {(householdSizeMin || householdSizeMax) && (
+              <Chip
+                label={`Household: ${householdSizeMin || '1'}-${householdSizeMax || '∞'}`}
+                onDelete={() => {
+                  setHouseholdSizeMin('');
+                  setHouseholdSizeMax('');
+                }}
+                size="small"
+              />
+            )}
+          </Box>
+        )}
+
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            Showing {filteredConstituents.length} of {constituents.length} constituents
+          </Typography>
+        </Box>
+      </Paper>
+
       <TableContainer component={Paper}>
         <Table sx={{ minWidth: 650 }}>
           <TableHead>
@@ -354,7 +553,7 @@ const ConstituentTable = () => {
               </TableRow>
             )}
 
-            {constituents.map((constituent) => (
+            {filteredConstituents.map((constituent) => (
               <TableRow key={constituent.id}>
                 {editingId === constituent.id ? (
                   <>
@@ -454,11 +653,13 @@ const ConstituentTable = () => {
               </TableRow>
             ))}
 
-            {constituents.length === 0 && !newRow && (
+            {filteredConstituents.length === 0 && !newRow && (
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   <Typography color="textSecondary">
-                    No constituents found. Click &quot;Add New&quot; to create one.
+                    {constituents.length === 0 
+                      ? 'No constituents found. Click "Add New" to create one.'
+                      : 'No constituents match the current filters.'}
                   </Typography>
                 </TableCell>
               </TableRow>
