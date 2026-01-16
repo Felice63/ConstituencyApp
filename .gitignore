@@ -25,3 +25,11 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Vite
+frontend/dist/
+frontend/.vite/
+frontend/dist-ssr/
+
+# Build outputs
+frontend/build/

@@ -1,20 +1,40 @@
-# Constituents Management API
+# Constituents Management Application
 
-A Node.js/Express REST API with SQLite database for managing constituent information.
+A full-stack application for managing constituent information with a Node.js/Express REST API backend and React frontend.
 
 ## Installation
+
+### Backend
 
 ```bash
 npm install
 ```
 
-## Running the Server
+### Frontend
+
+```bash
+cd frontend
+npm install
+```
+
+## Running the Application
+
+### Backend Server
 
 ```bash
 npm start
 ```
 
 The server will start on port 3000 (or the PORT environment variable if set).
+
+### Frontend Development Server
+
+```bash
+cd frontend
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173`
 
 ## API Endpoints
 
