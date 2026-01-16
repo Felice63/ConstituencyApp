@@ -333,6 +333,34 @@ app.post('/api/constituents/import/csv', (req, res) => {
   }
 });
 
+app.get('/api/analytics/wards', (req, res) => {
+  try {
+    const wardStats = db.prepare(`
+      SELECT 
+        wardNumber,
+        COUNT(*) as totalConstituents,
+        AVG(householdSize) as avgHouseholdSize,
+        SUM(householdSize) as totalHouseholdMembers,
+        COUNT(DISTINCT address) as uniqueAddresses
+      FROM constituents
+      GROUP BY wardNumber
+      ORDER BY wardNumber ASC
+    `).all();
+
+    const formattedStats = wardStats.map(ward => ({
+      wardNumber: ward.wardNumber,
+      totalConstituents: ward.totalConstituents,
+      avgHouseholdSize: parseFloat(ward.avgHouseholdSize.toFixed(2)),
+      totalHouseholdMembers: ward.totalHouseholdMembers,
+      geographicalCoverage: ward.uniqueAddresses
+    }));
+
+    res.json(formattedStats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

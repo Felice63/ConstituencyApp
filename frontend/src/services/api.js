@@ -88,3 +88,13 @@ export const constituentApi = {
     return response.json();
   },
 };
+
+export const analyticsApi = {
+  async getWardAnalytics() {
+    const response = await fetch(`${API_BASE_URL}/analytics/wards`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch ward analytics');
+    }
+    return response.json();
+  },
+};
