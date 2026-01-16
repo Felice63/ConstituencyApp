@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./database');
+const auditLog = require('./audit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -103,6 +104,8 @@ app.post('/api/constituents', (req, res) => {
     
     const newConstituent = db.prepare('SELECT * FROM constituents WHERE id = ?').get(result.lastInsertRowid);
     
+    auditLog.logCreate('constituent', newConstituent.id, newConstituent);
+    
     res.status(201).json(newConstituent);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -116,6 +119,12 @@ app.put('/api/constituents/:id', (req, res) => {
     
     if (!firstName || !lastName || !address || wardNumber === undefined || householdSize === undefined) {
       return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    const oldConstituent = db.prepare('SELECT * FROM constituents WHERE id = ?').get(id);
+    
+    if (!oldConstituent) {
+      return res.status(404).json({ error: 'Constituent not found' });
     }
 
     const stmt = db.prepare(`
@@ -132,6 +141,8 @@ app.put('/api/constituents/:id', (req, res) => {
     
     const updatedConstituent = db.prepare('SELECT * FROM constituents WHERE id = ?').get(id);
     
+    auditLog.logUpdate('constituent', parseInt(id), oldConstituent, updatedConstituent);
+    
     res.json(updatedConstituent);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -142,12 +153,20 @@ app.delete('/api/constituents/:id', (req, res) => {
   try {
     const { id } = req.params;
     
+    const constituent = db.prepare('SELECT * FROM constituents WHERE id = ?').get(id);
+    
+    if (!constituent) {
+      return res.status(404).json({ error: 'Constituent not found' });
+    }
+    
     const stmt = db.prepare('DELETE FROM constituents WHERE id = ?');
     const result = stmt.run(id);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Constituent not found' });
     }
+    
+    auditLog.logDelete('constituent', parseInt(id), constituent);
     
     res.status(204).send();
   } catch (error) {
@@ -316,7 +335,16 @@ app.post('/api/constituents/import/csv', (req, res) => {
           continue;
         }
         
-        stmt.run(firstName, lastName, address, wardNum, householdNum);
+        const result = stmt.run(firstName, lastName, address, wardNum, householdNum);
+        
+        auditLog.logCreate('constituent', result.lastInsertRowid, {
+          firstName,
+          lastName,
+          address,
+          wardNumber: wardNum,
+          householdSize: householdNum
+        });
+        
         results.successful++;
       } catch (error) {
         results.failed++;
@@ -356,6 +384,48 @@ app.get('/api/analytics/wards', (req, res) => {
     }));
 
     res.json(formattedStats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/audit-logs', (req, res) => {
+  try {
+    const { limit = 100, offset = 0, entityType, entityId } = req.query;
+    
+    const parsedLimit = parseInt(limit);
+    const parsedOffset = parseInt(offset);
+    
+    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 1000) {
+      return res.status(400).json({ error: 'Limit must be between 1 and 1000' });
+    }
+    
+    if (isNaN(parsedOffset) || parsedOffset < 0) {
+      return res.status(400).json({ error: 'Offset must be non-negative' });
+    }
+    
+    const params = {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      entityType: entityType || null,
+      entityId: entityId ? parseInt(entityId) : null
+    };
+    
+    const result = auditLog.getAllAuditLogs(params);
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/constituents/:id/audit-logs', (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const logs = auditLog.getAuditLogs('constituent', parseInt(id));
+    
+    res.json(logs);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

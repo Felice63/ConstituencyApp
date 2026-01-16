@@ -98,3 +98,36 @@ export const analyticsApi = {
     return response.json();
   },
 };
+
+export const auditApi = {
+  async getAllAuditLogs(params = {}) {
+    const { limit = 100, offset = 0, entityType = null, entityId = null } = params;
+    
+    const queryParams = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    
+    if (entityType) {
+      queryParams.set('entityType', entityType);
+    }
+    
+    if (entityId) {
+      queryParams.set('entityId', entityId.toString());
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/audit-logs?${queryParams.toString()}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch audit logs');
+    }
+    return response.json();
+  },
+
+  async getConstituentAuditLogs(constituentId) {
+    const response = await fetch(`${API_BASE_URL}/constituents/${constituentId}/audit-logs`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch constituent audit logs');
+    }
+    return response.json();
+  },
+};

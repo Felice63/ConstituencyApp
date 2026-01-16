@@ -15,4 +15,17 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entityType TEXT NOT NULL,
+    entityId INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    oldData TEXT,
+    newData TEXT,
+    changes TEXT,
+    timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 module.exports = db;

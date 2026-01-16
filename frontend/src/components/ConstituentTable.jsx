@@ -27,6 +27,11 @@ import {
   Grid,
   Chip,
   Pagination,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Card,
+  CardContent,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -39,8 +44,10 @@ import {
   Clear as ClearIcon,
   FileDownload as FileDownloadIcon,
   FileUpload as FileUploadIcon,
+  History as HistoryIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
-import { constituentApi } from '../services/api';
+import { constituentApi, auditApi } from '../services/api';
 
 const ConstituentTable = () => {
   const [constituents, setConstituents] = useState([]);
@@ -51,6 +58,7 @@ const ConstituentTable = () => {
   const [errors, setErrors] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, id: null });
+  const [historyDialog, setHistoryDialog] = useState({ open: false, constituentId: null, logs: [] });
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -365,6 +373,32 @@ const ConstituentTable = () => {
     const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
     window.open(mapsUrl, '_blank', 'noopener,noreferrer');
   };
+
+  const handleHistoryClick = async (constituentId) => {
+    try {
+      const logs = await auditApi.getConstituentAuditLogs(constituentId);
+      setHistoryDialog({ open: true, constituentId, logs });
+    } catch (error) {
+      showSnackbar('Failed to load history: ' + error.message, 'error');
+    }
+  };
+
+  const handleHistoryClose = () => {
+    setHistoryDialog({ open: false, constituentId: null, logs: [] });
+  };
+
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+
 
   const handleExportCSV = async () => {
     try {
@@ -761,6 +795,14 @@ const ConstituentTable = () => {
                     <TableCell>{constituent.householdSize}</TableCell>
                     <TableCell align="right">
                       <IconButton
+                        color="info"
+                        onClick={() => handleHistoryClick(constituent.id)}
+                        title="View History"
+                        disabled={editingId !== null || newRow !== null}
+                      >
+                        <HistoryIcon />
+                      </IconButton>
+                      <IconButton
                         color="success"
                         onClick={() => handleMapClick(constituent.address)}
                         title="View on Google Maps"
@@ -869,6 +911,115 @@ const ConstituentTable = () => {
           <Button onClick={handleImportConfirm} variant="contained" disabled={!csvFile}>
             Import
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={historyDialog.open} onClose={handleHistoryClose} maxWidth="md" fullWidth>
+        <DialogTitle>
+          Constituent History (ID: {historyDialog.constituentId})
+        </DialogTitle>
+        <DialogContent>
+          {historyDialog.logs.length === 0 ? (
+            <Typography color="textSecondary" align="center" sx={{ py: 3 }}>
+              No history available for this constituent
+            </Typography>
+          ) : (
+            <Box sx={{ mt: 1 }}>
+              {historyDialog.logs.map((log) => {
+                const changes = JSON.parse(log.changes || '{}');
+                return (
+                  <Accordion key={log.id} sx={{ mb: 1 }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                        <Chip
+                          label={log.operation}
+                          color={
+                            log.operation === 'CREATE' ? 'success' :
+                            log.operation === 'UPDATE' ? 'primary' : 'error'
+                          }
+                          size="small"
+                        />
+                        <Typography variant="body2" color="textSecondary">
+                          {formatTimestamp(log.timestamp)}
+                        </Typography>
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      {log.operation === 'CREATE' && changes.new && (
+                        <Grid container spacing={2}>
+                          <Grid item xs={12}>
+                            <Typography variant="subtitle2" color="textSecondary">
+                              New Record Created:
+                            </Typography>
+                          </Grid>
+                          {Object.entries(changes.new).map(([key, value]) => (
+                            <Grid item xs={12} sm={6} key={key}>
+                              <Typography variant="body2">
+                                <strong>{key}:</strong> {JSON.stringify(value)}
+                              </Typography>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      )}
+                      
+                      {log.operation === 'DELETE' && changes.old && (
+                        <Grid container spacing={2}>
+                          <Grid item xs={12}>
+                            <Typography variant="subtitle2" color="textSecondary">
+                              Record Deleted:
+                            </Typography>
+                          </Grid>
+                          {Object.entries(changes.old).map(([key, value]) => (
+                            <Grid item xs={12} sm={6} key={key}>
+                              <Typography variant="body2">
+                                <strong>{key}:</strong> {JSON.stringify(value)}
+                              </Typography>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      )}
+                      
+                      {log.operation === 'UPDATE' && changes.fields && Object.keys(changes.fields).length > 0 && (
+                        <Grid container spacing={2}>
+                          {Object.entries(changes.fields).map(([field, change]) => (
+                            <Grid item xs={12} key={field}>
+                              <Card variant="outlined" sx={{ bgcolor: '#f5f5f5' }}>
+                                <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                                  <Typography variant="body2">
+                                    <strong>{field}:</strong>
+                                  </Typography>
+                                  <Box sx={{ mt: 0.5, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <Chip
+                                      label={String(change.old)}
+                                      size="small"
+                                      color="error"
+                                      variant="outlined"
+                                    />
+                                    <Typography variant="body2" color="textSecondary">
+                                      →
+                                    </Typography>
+                                    <Chip
+                                      label={String(change.new)}
+                                      size="small"
+                                      color="success"
+                                      variant="outlined"
+                                    />
+                                  </Box>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      )}
+                    </AccordionDetails>
+                  </Accordion>
+                );
+              })}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleHistoryClose}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>
