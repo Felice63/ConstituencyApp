@@ -34,23 +34,6 @@
 - Comprehensive form validation
 - User-friendly error messages
 
-## Project Structure
-```
-.
-├── server.js           # Express server
-├── database.js         # SQLite database setup
-├── package.json        # Backend dependencies
-├── frontend/           # React frontend
-│   ├── src/
-│   │   ├── components/ # React components
-│   │   ├── services/   # API service layer
-│   │   ├── App.jsx     # Main app component
-│   │   └── main.jsx    # Entry point
-│   ├── public/         # Static assets
-│   ├── index.html      # HTML template
-│   ├── vite.config.js  # Vite configuration
-│   └── package.json    # Frontend dependencies
-```
 
 ## API Endpoints
 
