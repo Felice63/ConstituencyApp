@@ -47,7 +47,7 @@ import {
   History as HistoryIcon,
   ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
-import { constituentApi, auditApi } from '../services/api';
+import { constituentApi, auditApi, analyticsApi } from '../services/api';
 
 const ConstituentTable = () => {
   const [constituents, setConstituents] = useState([]);
@@ -136,9 +136,8 @@ const ConstituentTable = () => {
       setConstituents(response.data);
       setTotalCount(response.pagination.total);
 
-      const allWardsResponse = await constituentApi.getAll({ limit: 1000, offset: 0 });
-      const wards = [...new Set(allWardsResponse.data.map(c => c.wardNumber))];
-      setUniqueWards(wards.sort((a, b) => a - b));
+      const wardAnalytics = await analyticsApi.getWardAnalytics();
+      setUniqueWards(wardAnalytics.map(ward => ward.wardNumber));
     } catch (error) {
       showSnackbar('Failed to load constituents: ' + error.message, 'error');
     } finally {
